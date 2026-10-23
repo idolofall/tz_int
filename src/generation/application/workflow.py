@@ -382,15 +382,21 @@ class Workflow:
         task: GenerationTask,
         failure: FailureType,
     ) -> None:
-        model = await session.get(Model, task.model_slug)
-        assert model is not None
-        await add_ledger_entry(
-            session,
-            user_id=task.user_id,
-            amount=model.price_tokens,
-            kind=LedgerKind.REFUND,
-            reference_id=str(task.id),
+        debit = await session.scalar(
+            select(LedgerEntry.amount).where(
+                LedgerEntry.kind == LedgerKind.DEBIT.value,
+                LedgerEntry.reference_id == str(task.id),
+            )
         )
+        refund_amount = abs(int(debit or 0))
+        if refund_amount:
+            await add_ledger_entry(
+                session,
+                user_id=task.user_id,
+                amount=refund_amount,
+                kind=LedgerKind.REFUND,
+                reference_id=str(task.id),
+            )
         task.status = TaskStatus.FAILED
         task.error_type = failure.value
         task.result_url = None
